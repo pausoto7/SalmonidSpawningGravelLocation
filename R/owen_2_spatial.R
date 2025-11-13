@@ -43,7 +43,35 @@ source("R/make_watershed.R")
 
 river_name <- "owen_crk"
 
-make_watershed(river_name, "spatial data/owen_crk/dem_utm.tif", dem_utm, "spatial data/owen_crk/pour_points.shp")
+watershed_polygon <- make_watershed(river_name, "spatial data/owen_crk/dem_utm.tif", dem_utm, "spatial data/owen_crk/pour_points.shp")
+
+watershed_df <- st_drop_geometry(watershed_polygon)
+
+save(watershed_df, file = "tabular data/owen_crk/owen_watershed_df.RData")
+
+
+# -----------------------------------------------------------------
+
+
+
+load("tabular data/owen_crk/owen_stream_properties.RData")
+load("tabular data/owen_crk/owen_watershed_df.RData")
+
+stream_properties_all <- stream_properties %>%
+  right_join(watershed_df, by = join_by(OBJ_ORDER == watersheds))
+
+
+# math
+
+stream_properties_calc <- stream_properties_all %>%
+  mutate(logh = log10(h), 
+         logA = log10(ws_area_m2 ))
+
+
+fit <- lm(logh ~ logA, data=stream_properties_calc)
+alpha <- 10^(coef(fit)[1]); beta <- coef(fit)[2]
+summary(fit) 
+alpha; beta
 
 
 
