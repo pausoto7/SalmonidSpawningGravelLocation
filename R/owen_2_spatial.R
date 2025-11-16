@@ -69,9 +69,9 @@ stream_properties_calc <- stream_properties_all %>%
 
 
 fit <- lm(logh ~ logA, data=stream_properties_calc)
-alpha <- 10^(coef(fit)[1]); beta <- coef(fit)[2]
+alpha <- 10^(coef(fit)[1])
+beta <- coef(fit)[2]
 summary(fit) 
-alpha; beta
 
 
 

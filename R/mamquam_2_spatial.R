@@ -43,8 +43,29 @@ source("R/make_watershed.R")
 
 river_name <- "mamquam_river"
 
-watershed_polygon <- make_watershed(river_name, "spatial data/mamquam_river/dem_utm.tif", dem_utm, "spatial data/mamquam_river/pour_points.shp")
+
+
+path_start <- sprintf("spatial data/%s/watershed_files/", river_name)
+
+
+watershed_polygon <- make_watershed(path_start, "spatial data/mamquam_river/dem_utm.tif", dem_utm, "spatial data/mamquam_river/pour_points.shp")
 
 watershed_df <- st_drop_geometry(watershed_polygon)
+
+
+
+# get final watershed area for input points --------------------------------------------------------
+
+
+
+path_start <- sprintf("spatial data/%s/ws_files_AOI/",  "mamquam_river")
+
+
+watershed_polygon <- make_watershed(path_start, "spatial data/mamquam_river/dem_utm.tif", dem_utm, "spatial data/mamquam_river/mamq_pour_points_AOI.shp")
+
+
+
+
+
 
 

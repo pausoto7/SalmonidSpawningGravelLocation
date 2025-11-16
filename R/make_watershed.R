@@ -2,10 +2,9 @@ library(mapview)
 library(tidyverse)
 
 
-make_watershed <- function(river_name, dem_utm_path, dem_utm, pour_points){
+make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points){
   
   
-  path_start <- sprintf("spatial data/%s/watershed_files/", river_name)
 
   
   
@@ -15,7 +14,7 @@ make_watershed <- function(river_name, dem_utm_path, dem_utm, pour_points){
   wbt_breach_depressions_least_cost(
     dem   = dem_utm_path,
     output = paste0(path_start, "dem_breached.tif"), 
-    dist = 25                       # MAY NEED TO BE MODIFIED LATER?
+    dist = 30                       # MAY NEED TO BE MODIFIED LATER?
   )
   
   print("pointer")

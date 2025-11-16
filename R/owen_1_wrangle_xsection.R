@@ -57,9 +57,9 @@ stream_properties <- clean_bankfull %>%
             w = max(distance) - min(distance)) 
   
 
+save(stream_properties, file = "tabular data/owen_crk/owen_stream_properties.RData")
 
-
-
+print(stream_properties)
 
 
 
