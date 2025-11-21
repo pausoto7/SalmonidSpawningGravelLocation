@@ -34,9 +34,25 @@ ggplot(clean_bankfull ) +
 
 
 
-thalwag_data <- clean_bankfull %>%
+thalwag_data_m <- clean_bankfull %>%
   group_by(OBJ_ORDER) %>%
   mutate(deepest_point = min(RASTERVALU)) %>%
   distinct(OBJ_ORDER, deepest_point, .keep_all = TRUE)
 
-save(thalwag_data, file = "tabular data/mamquam_river/thalwag_data.RData")
+save(thalwag_data_m, file = "tabular data/mamquam_river/thalwag_data.RData")
+
+
+
+# ------------------------
+
+stream_properties_mamq <- clean_bankfull %>%
+  group_by(OBJ_ORDER) %>%
+  summarise(h = max(RASTERVALU) - min(RASTERVALU), 
+            w = max(distance) - min(distance)) 
+
+
+save(stream_properties_mamq, file = "tabular data/mamquam_river/owen_stream_properties.RData")
+
+print(stream_properties_mamq)
+
+
