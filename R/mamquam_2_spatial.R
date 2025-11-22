@@ -16,17 +16,17 @@ load("tabular data/mamquam_river/thalwag_data.RData")
 dem_mamq <- rast("spatial data/mamquam_river/DEM.tif")
 
 
-dem_utm_mamq <- project(dem_mamq, "EPSG:3156")  # NAD83(CSRS) / UTM zone 9N
-writeRaster(dem_utm_mamq, "spatial data/mamquam_river/dem_utm.tif", overwrite = TRUE)
-
-# your thalwag points in UTM (you basically have this already)
-pts_utm <- st_as_sf(
-  thalwag_data_m,
-  coords = c("POINT_X", "POINT_Y"),
-  crs = 3156
-)
-st_write(pts_utm, "spatial data/mamquam_river/pour_points.shp", append = FALSE)
-
+# dem_utm_mamq <- project(dem_mamq, "EPSG:3156")  # NAD83(CSRS) / UTM zone 9N
+# writeRaster(dem_utm_mamq, "spatial data/mamquam_river/dem_utm.tif", overwrite = TRUE)
+# 
+# # your thalwag points in UTM (you basically have this already)
+# pts_utm <- st_as_sf(
+#   thalwag_data_m,
+#   coords = c("POINT_X", "POINT_Y"),
+#   crs = 3156
+# )
+# st_write(pts_utm, "spatial data/mamquam_river/pour_points.shp", append = FALSE)
+# 
 
 # tmap_mode("view")  # static map
 # 
@@ -42,11 +42,11 @@ st_write(pts_utm, "spatial data/mamquam_river/pour_points.shp", append = FALSE)
 
 
 
-source("R/make_watershed.R")
+#source("R/make_watershed.R")
 
 river_name <- "mamquam_river"
 
-path_start <- sprintf("spatial data/%s/watershed_files/", river_name)
+path_start <- sprintf("spatial data/%s/watershed_files_v2", river_name)
 
 
 watershed_polygon_mamq <- make_watershed(path_start, "spatial data/mamquam_river/dem_utm.tif", dem_utm_mamq, "spatial data/mamquam_river/pour_points.shp")
@@ -55,6 +55,7 @@ watershed_df_mamq <- st_drop_geometry(watershed_polygon_mamq)
 
 
 #### MATH _--------------------------------------
+load(file = "tabular data/mamquam_river/owen_stream_properties.RData")
 
 
 stream_properties_all_mamq <- stream_properties_mamq %>%
@@ -65,8 +66,11 @@ stream_properties_all_mamq <- stream_properties_mamq %>%
 
 stream_properties_calc_mamq <- stream_properties_all_mamq %>%
   mutate(logh = log10(h), 
-         logA = log10(ws_area_m2 ))
+         logA = log10(ws_up_A_m2 ))
 
+
+stream_properties_calc_mamq <- stream_properties_calc_mamq %>%
+  filter(OBJ_ORDER <4)
 
 fit_m <- lm(logh ~ logA, data=stream_properties_calc_mamq)
 alpha_m <- 10^(coef(fit_m)[1])
@@ -83,7 +87,7 @@ summary(fit_m)
 
 
 
-path_start_m <- sprintf("spatial data/%s/ws_files_AOI/",  "mamquam_river")
+path_start_m <- sprintf("spatial data/%s/ws_files_AOI",  "mamquam_river")
 
 
 watershed_polygon_m <- make_watershed(path_start_m,
@@ -91,6 +95,7 @@ watershed_polygon_m <- make_watershed(path_start_m,
                                       dem_utm_mamq,
                                       "spatial data/mamquam_river/mamq_pour_points_AOI.shp")
 
+watershed_polygon_m <- sf::st_read("spatial data/mamquam_river/mamq_pour_points_AOI.shp", fid_column_name = "FID")
 
 
 watershed_AOI_df_m <- st_drop_geometry(watershed_polygon_m)
@@ -123,11 +128,11 @@ dem <- rast(dem_path)
 # See what layer name is inside the GPKG
 st_layers(gpkg_path)
 
-thalweg <- st_read(gpkg_path, layer = "thalwag_with_drainage_area")
+thalweg_raw <- st_read(gpkg_path, layer = "thalwag_with_drainage_area")
 
 # Make sure CRS matches DEM and drop Z/M
-thalweg <- st_transform(thalweg, st_crs(crs(dem)))
-thalweg <- st_zm(thalweg, drop = TRUE, what = "ZM")
+thalweg_transformed <- st_transform(thalweg_raw, st_crs(crs(dem)))
+thalweg <- st_zm(thalweg_transformed, drop = TRUE, what = "ZM")
 
 ## ---- 2. Extract elevation from DEM ----
 zvals <- terra::extract(dem, vect(thalweg))
@@ -187,6 +192,50 @@ thalweg <- thalweg %>%
 st_write(thalweg,
          file.path(path_start, "mamquam_thalweg_D50.gpkg"),
          delete_dsn = TRUE)
+
+# ----------------------------------------------
+
+summary_data_raw <- sf::st_read("spatial data/mamquam_river/ws_files_AOI/mamquam_thalweg_D50.gpkg", layer = "mamquam_thalweg_D50")
+
+summary_data_df <- sf::st_drop_geometry(summary_data_raw)
+
+# Summary of spawning classes
+summary_table <- summary_data_df %>%
+  filter()
+  group_by(spawn_class) %>%
+  summarise(
+    n = n(),
+    pct = round(n / nrow(summary_data_df) * 100, 1)
+  )
+
+summary_table
+
+
+
+# Estimate segment lengths as distance differences
+summary_data_arr <- summary_data_df %>%
+  arrange(dist_m) %>%
+  mutate(seg_length_m = c(diff(dist_m), 0))
+
+habitat_length <- summary_data_arr %>%
+  group_by(spawn_class) %>%
+  summarise(
+    total_length_m = sum(seg_length_m, na.rm = TRUE),
+    total_length_km = total_length_m / 1000
+  )
+
+habitat_length
+
+ggplot(summary_data_df, aes(x = S_use, y = D50_mm, color = spawn_class)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(
+    title = "Relationship Between Slope and Predicted D50",
+    x = "Channel Slope (S_use)",
+    y = "Predicted Median Grain Size D50 (mm)",
+    color = "Substrate Class"
+  ) +
+  theme_minimal(base_size = 13)
+
 
 
 

@@ -60,7 +60,7 @@ watershed_polygon_mamq <- make_watershed(
 watershed_df_mamq <- st_drop_geometry(watershed_polygon_mamq)
 
 # Load cross-section hydraulic properties (h, w) for calibration sites
-load("tabular data/mamquam_river/owen_stream_properties.RData")
+load("tabular data/mamquam_river/mamquam_stream_properties.RData")
 # stream_properties_mamq: columns OBJ_ORDER, h, w
 
 # Join XS properties to watershed area by cross-section order
@@ -83,7 +83,7 @@ summary(fit_m)  # keep for QC
 ## ===========================
 ## 5. AOI pour points + watershed (Mamquam mainstem)
 ## ===========================
-path_aoi <- sprintf("spatial data/%s/ws_files_AOI/", river_name)
+path_aoi <- sprintf("spatial data/%s/ws_files_AOI", river_name)
 
 watershed_polygon_m <- make_watershed(
   path_start   = path_aoi,
@@ -167,7 +167,7 @@ thalweg <- thalweg %>%
 ## ===========================
 rho   <- 1000   # kg/m3
 rhos  <- 2650   # kg/m3
-tau_c <- 0.045  # critical Shields parameter
+tau_c <- 0.047  # critical Shields parameter
 
 thalweg <- thalweg %>%
   mutate(
@@ -183,12 +183,13 @@ thalweg <- thalweg %>%
     )
   )
 
-# Save for mapping
-st_write(
-  thalweg,
-  file.path(path_aoi, "mamquam_thalweg_D50.gpkg"),
-  delete_dsn = TRUE
-)
+# # Save for mapping
+# st_write(
+#   thalweg,
+#   file.path(path_aoi, "mamquam_thalweg_D50_v3.gpkg"),
+#   delete_dsn = TRUE, 
+#   delete_layer = TRUE
+# )
 
 ## ===========================
 ## 9. Summaries & diagnostics
@@ -199,10 +200,11 @@ summary_data_raw <- st_read(
   fid_column_name = "FID"
 )
 
-summary_data_df <- st_drop_geometry(summary_data_raw)
+summary_data_df <- st_drop_geometry(thalweg)
+
 
 # Spawning class counts and percentages
-summary_table <- summary_data_df %>%
+summary_table <- summary_table_df %>%
   group_by(spawn_class) %>%
   summarise(
     n   = n(),
@@ -213,7 +215,7 @@ summary_table <- summary_data_df %>%
 print(summary_table)
 
 # Segment lengths (approximate)
-summary_data_arr <- summary_data_df %>%
+summary_data_arr <- summary_table_df %>%
   arrange(FID) %>%  # same order as slope calcs
   mutate(seg_length_m = c(diff(dist_m), 0))
 

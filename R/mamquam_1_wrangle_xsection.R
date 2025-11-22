@@ -51,7 +51,7 @@ stream_properties_mamq <- clean_bankfull %>%
             w = max(distance) - min(distance)) 
 
 
-save(stream_properties_mamq, file = "tabular data/mamquam_river/owen_stream_properties.RData")
+save(stream_properties_mamq, file = "tabular data/mamquam_river/mamquam_stream_properties.RData")
 
 print(stream_properties_mamq)
 
