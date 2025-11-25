@@ -1,5 +1,4 @@
 
-
 # SPATIAL COMPONENT ---------------------
 
 
@@ -10,6 +9,7 @@ library(sf)
 library(dplyr)
 library(zoo)
 library(whitebox)
+library(mapview)
 wbt_init()  # optional but nice if you haven’t run whitebox yet
 
 
@@ -45,48 +45,52 @@ source("R/make_watershed_2.R")
 load("tabular data/owen_crk/owen_stream_properties.RData")
 load("tabular data/owen_crk/owen_watershed_df.RData")
 
-path_start_o <- sprintf("spatial data/%s/ws_files_AOI",  "owen_crk")
+path_start_o <- sprintf("spatial data/%s/watershed_files/", "owen_crk") 
 
 
 # This should create dem_breached, d8_pntr, fac_area, watersheds, and
 # thalwag_with_drainage_area.gpkg in path_calib
-watershed_polygon_mamq <- make_watershed(
+watershed_polygon_owen <- make_watershed(
   path_start   = path_start_o,
   dem_utm_path = "spatial data/owen_crk/dem_utm.tif",
   dem_utm      = dem_utm,
-  pour_points  = "spatial data/owen_crk/owen_xsec_AOI.shp"
+  pour_points  = "spatial data/owen_crk/pour_points.shp"
 )
 
 # Drop geometry to get watershed areas (ws_area_m2, ws_area_km2)
-watershed_df_o <- st_drop_geometry(watershed_polygon_mamq)
+watershed_df_o <- st_drop_geometry(watershed_polygon_owen)
 
 # Load cross-section hydraulic properties (h, w) for calibration sites
-load("tabular data/mamquam_river/mamquam_stream_properties.RData")
+load("tabular data/owen_crk/owen_stream_properties.RData")
 # stream_properties_mamq: columns OBJ_ORDER, h, w
 
 # Join XS properties to watershed area by cross-section order
-stream_properties_all_mamq <- stream_properties %>%
+stream_properties_all_o <- stream_properties %>%
   right_join(watershed_df_o,
              by = join_by(OBJ_ORDER == watersheds))
 
 # Use km2 consistently in HG
-stream_properties_calc <- stream_properties_all %>%
+stream_properties_calc <- stream_properties_all_o %>%
   mutate(
     logh = log10(h),
-    logA = log10(ws_area_km2)
+    logA = log10(ws_cum_up_m2)
   )
+
+write.csv(stream_properties_calc, "tabular data/owen_crk/owen_stream_properties.csv")
 
 fit <- lm(logh ~ logA, data=stream_properties_calc)
 alpha <- 10^(coef(fit)[1])
 beta <- coef(fit)[2]
 summary(fit) 
 
+
+
 ## ===========================
 ## 5. AOI pour points + watershed (Mamquam mainstem)
 ## ===========================
-path_start_o <- sprintf("spatial data/%s/ws_files_AOI/",  "owen_crk")
+path_calib <- sprintf("spatial data/%s/ws_files_AOI_2",  "owen_crk")
 
-watershed_polygon_m <- make_watershed(path_start_o,
+watershed_polygon_m <- make_watershed(path_calib,
                                       dem_utm_path = "spatial data/owen_crk/dem_utm.tif",
                                       dem_utm,
                                       "spatial data/owen_crk/owen_pour_points_AOI.shp")
@@ -94,7 +98,7 @@ watershed_polygon_m <- make_watershed(path_start_o,
 
 # Preserve original FID when you read AOI pour points
 watershed_area_pnts <- st_read(
-  "spatial data/owen_crk/owen_pour_points_AOI.shp",
+  "spatial data/owen_crk/owen_xsec_AOI.shp",
   fid_column_name = "FID"
 )
 
@@ -104,7 +108,7 @@ watershed_area_pnts <- st_read(
 ## ===========================
 # make_watershed() wrote the snapped AOI pour points with drainage area to:
 gpkg_path <- file.path("spatial data/owen_crk/ws_files_AOI/", "thalwag_with_drainage_area.gpkg")
-dem_path  <- "spatial data/mamquam_river/dem_utm.tif"
+dem_path  <- "spatial data/owen_crk/dem_utm.tif"
 
 dem <- rast(dem_path)
 

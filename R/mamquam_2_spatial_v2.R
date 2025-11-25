@@ -194,17 +194,17 @@ thalweg <- thalweg %>%
 ## ===========================
 ## 9. Summaries & diagnostics
 ## ===========================
-summary_data_raw <- st_read(
-  file.path(path_aoi, "mamquam_thalweg_D50.gpkg"),
-  layer = "mamquam_thalweg_D50",
-  fid_column_name = "FID"
-)
+# summary_data_raw <- st_read(
+#   file.path(path_aoi, "mamquam_thalweg_D50.gpkg"),
+#   layer = "mamquam_thalweg_D50",
+#   fid_column_name = "FID"
+# )
 
 summary_data_df <- st_drop_geometry(thalweg)
 
 
 # Spawning class counts and percentages
-summary_table <- summary_table_df %>%
+summary_table <- summary_data_df %>%
   group_by(spawn_class) %>%
   summarise(
     n   = n(),
@@ -215,7 +215,7 @@ summary_table <- summary_table_df %>%
 print(summary_table)
 
 # Segment lengths (approximate)
-summary_data_arr <- summary_table_df %>%
+summary_data_arr <- summary_data_df %>%
   arrange(FID) %>%  # same order as slope calcs
   mutate(seg_length_m = c(diff(dist_m), 0))
 

@@ -8,6 +8,15 @@ library(mapview)
 # dem_utm_path: path to DEM in same CRS as dem_utm (e.g., "…/dem_utm.tif")
 # dem_utm: terra rast object of same DEM (used only for mapview/QC)
 # pour_points: path to *POINT* layer with pour points (XS locations etc.)
+
+
+
+# watershed_polygon_m <- make_watershed(path_start = path_start_o,
+#                                       dem_utm_path = "spatial data/owen_crk/dem_utm.tif",
+#                                       dem_utm,
+#                                       pour_points ="spatial data/owen_crk/pour_points.shp")
+# 
+
 make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   
   # ---------------------------------------------------------------------------
@@ -64,11 +73,11 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   wbt_snap_pour_points(
     pour_pts   = pp_tmp,
     flow_accum = file.path(path_start, "fac_area.tif"),
-    output     = file.path(path_start, "pour_points_snapped.shp"),
+    output     = file.path(path_start, "pour_points_snapped_raw.shp"),
     snap_dist  = 100
   )
   
-  pour_snapped <- st_read(file.path(path_start, "pour_points_snapped.shp"),
+  pour_snapped <- st_read(file.path(path_start, "pour_points_snapped_raw.shp"),
                           quiet = TRUE) %>%
     st_zm(drop = TRUE, what = "ZM") %>%
     st_transform(st_crs(target_crs))
@@ -79,10 +88,12 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   pour_snapped$drainage_area_m2  <- da_vals[, 2]
   pour_snapped$drainage_area_km2 <- pour_snapped$drainage_area_m2 / 1e6
   
+  pour_snapped <- pour_snapped %>% 
+    rename(FID_OG = FID)
   # Save points + drainage area as GPKG for analysis & mapping
   st_write(
     pour_snapped,
-    file.path(path_start, "thalwag_with_drainage_area.gpkg"),
+    file.path(path_start, "AOI_with_drainage_area.gpkg"),
     delete_dsn = TRUE,
     quiet = TRUE
   )
@@ -123,42 +134,48 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   message("attach upstream area to polygons")
   
   # Extract watershed ID at each pour point from the watershed raster
-  ws_id_vals <- terra::extract(ws_rast, vect(pour_snapped))[, 2]
-  pour_snapped$ws_id <- ws_id_vals
-  
+  # ws_id_vals <- terra::extract(ws_rast, vect(pour_snapped))[, 2]
+  # pour_snapped$ws_id <- ws_id_vals
+  # 
   # Build lookup table: one row per watershed ID with its cumulative area
-  da_lookup <- pour_snapped %>%
-    st_drop_geometry() %>%
-    select(ws_id, drainage_area_m2, drainage_area_km2) %>%
-    distinct(ws_id, .keep_all = TRUE)
+  # da_lookup <- ws_poly_sf %>%
+  #   st_drop_geometry() %>%
+  #   select(ws_id, drainage_area_m2, drainage_area_km2) %>%
+  #   distinct(ws_id, .keep_all = TRUE)
+  # 
+  # # Attach to polygons using watershed ID
+  # ws_poly_sf <- ws_poly_sf %>%
+  #   rename(ws_id = watersheds) %>%
+  #   left_join(da_lookup, by = "ws_id") %>%
+  #   rename(
+  #     ws_upstream_area_m2  = drainage_area_m2,
+  #     ws_upstream_area_km2 = drainage_area_km2
+  #   )
   
-  # Attach to polygons using watershed ID
-  ws_poly_sf <- ws_poly_sf %>%
-    rename(ws_id = watersheds) %>%
-    left_join(da_lookup, by = "ws_id") %>%
-    rename(
-      ws_upstream_area_m2  = drainage_area_m2,
-      ws_upstream_area_km2 = drainage_area_km2
+  
+  
+  ws_poly_sf_upstream <- ws_poly_sf %>%
+    arrange(watersheds) %>%                      # or your actual along-stream order
+    mutate(
+      ws_local_area_m2  = as.numeric(ws_local_area_m2),
+      ws_local_area_km2 = ws_local_area_m2 / 1e6,
+      
+      # tail-cumulative sum: each polygon gets its own area + all upstream ones
+      ws_cum_up_m2  = rev(cumsum(rev(ws_local_area_m2))),
+      ws_cum_up_km2 = ws_cum_up_m2 / 1e6
     )
+  
   
   # Write polygons to GPKG
   st_write(
-    ws_poly_sf,
-    file.path(path_start, "watersheds_polygons.gpkg"),
+    ws_poly_sf_upstream,
+    file.path(path_start, "watersheds_polygons_o.gpkg"),
     delete_dsn = TRUE,
     quiet = TRUE
   )
   
-  # ---------------------------------------------------------------------------
-  # 6. Quick visual QC (optional)
-  # ---------------------------------------------------------------------------
-  suppressWarnings({
-    mapview(dem_utm) +
-      mapview(ws_poly_sf, alpha.regions = 0.2,
-              col.regions = NA, color = "black") +
-      mapview(pour_snapped, zcol = "drainage_area_km2")
-  })
   
+
   # Return SF polygons with both local + upstream area
-  return(ws_poly_sf)
+  return(ws_poly_sf_upstream)
 }
