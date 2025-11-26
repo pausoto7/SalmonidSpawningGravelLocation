@@ -1,6 +1,16 @@
 
 source("R/make_watershed_3.R")
 
+
+library(tidyverse)
+library(terra)
+library(sf)      # vectors / shapefiles
+library(tmap)
+library(sf)
+library(zoo)
+library(whitebox)
+library(mapview)
+
 dem <- rast("spatial data/owen_crk/DEM.tif")
 
 dem_utm <- project(dem, "EPSG:3156")  # NAD83(CSRS) / UTM zone 9N
@@ -67,19 +77,43 @@ slope_table <- distance_table %>%
 
 
 # CALCULATE DRAINAGE AREA  ----------------------------------------------------------
+# Derive regional Q–A relationship from similar watersheds
+# CSV must have columns: station, area (km2), flow (m3/s)
 
-# a <- 23.753
-# b <- 0.7808
-a <- 0.228
-b <- 1.109
-k_s <- 0.3 #roughness coefficient
-g   <- 9.81          # gravity, m/s^2
+qa_regional <- read.csv("spatial data/owen_crk/owen_similar_watersheds.csv",
+                        stringsAsFactors = FALSE)
 
-  
+qa_regional_clean <- qa_regional %>%
+  dplyr::rename(
+    area_km2 = area,
+    Q_m3s    = flow
+  ) %>%
+  dplyr::filter(
+    !is.na(area_km2), !is.na(Q_m3s),
+    area_km2 > 0, Q_m3s > 0
+  )
+
+# Fit Q = a * A^b  →  ln(Q) = ln(a) + b * ln(A)
+fit_QA <- lm(log(Q_m3s) ~ log(area_km2), data = qa_regional_clean)
+coef_QA <- coef(fit_QA)
+
+a <- exp(coef_QA[1])  # alpha (units depend on area units; here A in km², Q in m³/s)
+b <- coef_QA[2]       # beta (dimensionless)
+
+# Optional: quick check in console
+message("Regional Q–A fit for Owen: Q = ", round(a, 3), " * A^", round(b, 3))
+
+# Hydraulic constants
+k_s <- 0.3  # roughness coefficient
+g   <- 9.81 # gravity, m/s^2
+
+# Use regional Q–A curve to estimate Q and unit discharge q at each cross-section
 owen_w_discharge <- slope_table %>%
-  mutate(stream_width = as.numeric(stream_width), 
-         Q = a*ws_cum_up_km2^b, 
-         q = Q/stream_width)
+  mutate(
+    stream_width = as.numeric(stream_width),
+    Q            = a * ws_cum_up_km2^b,  # Q in m3/s, A in km2
+    q            = Q / stream_width      # unit discharge (m2/s)
+  )
 
 owen_hydro <- owen_w_discharge %>%
   mutate(
@@ -89,33 +123,75 @@ owen_hydro <- owen_w_discharge %>%
     )^(3/10)
   )
 
-fit_hA <- lm(log(height) ~ log(ws_cum_up_km2), data = owen_hydro)
-coef_hA <- coef(fit_hA)
-alpha_h <- exp(coef_hA[1])
-beta_h  <- coef_hA[2]
+write.csv(owen_hydro, "tabular data/owen_crk/owen_crk_hydro_output.csv")
 
 
 
 
-library(ggplot2)
+# NEW DATA PORTION ----------------------------------------------------------------------
 
-ggplot(owen_hydro, aes(x = ws_cum_up_km2, y = height)) +
-  geom_point() +
-  scale_x_log10() +
-  scale_y_log10() +
-  labs(x = "Drainage area (km²)", y = "Depth h (m)",
-       title = "h–A hydraulic geometry (Owen)")
+# Preserve original FID when you read AOI pour points
+watershed_area_pnts <- st_read(
+  "spatial data/owen_crk/owen_xsec_AOI.shp",
+  fid_column_name = "FID"
+) 
 
-library(ggrepel)
+watershed_area_pnts <- watershed_area_pnts %>%
+  filter(as.numeric(FID) %% 2 ==1)
 
-ggplot(owen_hydro, aes(x = ws_cum_up_km2, y = stream_width)) +
-  geom_point() +
-  geom_text_repel(aes(label = from), size = 3) +
-  
-  scale_x_log10() +
-  scale_y_log10() +
-  labs(x = "Drainage area (km²)", y = "Width w (m)",
-       title = "w–A hydraulic geometry (Owen)")
+
+# Make sure thalweg_o is in the same CRS as the DEM
+thalweg_o  <- st_transform(watershed_area_pnts, st_crs(crs(dem_utm)))
+thalweg_o  <- st_zm(thalweg_o, drop = TRUE, what = "ZM")  # ensure 2D points
+
+zvals <- terra::extract(dem_utm, vect(thalweg_o))
+thalweg_o$elev_m <- zvals[, 2]   # 2nd column is the raster value
+
+
+
+
+
+## ---- 4. Compute local + smoothed slope ----
+thalweg_o <- thalweg_o %>%
+  mutate(
+    dz     = c(NA, diff(elev_m)),
+    S_seg  = dz / dx
+  )
+
+# Rolling-mean slope over ~5 points (adjust 'k' if spacing is very small/large)
+k <- 3
+thalweg_o <- thalweg_o %>%
+  mutate(
+    S_roll = zoo::rollapply(S_seg, width = k, mean, fill = NA, align = "center"),
+    S_use  = ifelse(is.na(S_roll), S_seg, S_roll)  # use smoothed where available
+  )
+
+## ---- 5. Compute D50 from hydraulic geometry + slope ----
+# >>>> FILL THESE IN from your h ~ A^beta fit for owen <<<<
+
+rho   <- 1000    # water density (kg/m3)
+rhos  <- 2650    # sediment density (kg/m3)
+tau_c <- 0.045   # critical Shields (try 0.035–0.06 in sensitivity later)
+
+thalweg_o <- thalweg_o %>%
+  mutate(
+    h_m    = alpha * (drainage_area_km2^beta),         # bankfull depth from HG
+    D50_m  = (rho * h_m * S_use) / ((rhos - rho) * tau_c),
+    D50_mm = D50_m * 1000,
+    spawn_class = case_when(
+      is.na(D50_mm)        ~ NA_character_,
+      D50_mm < 7           ~ "too fine",
+      D50_mm <= 47         ~ "spawning gravel",
+      TRUE                 ~ "too coarse"
+    )
+  )
+
+## ---- 6. Save out for mapping in ArcGIS/QGIS ----
+st_write(thalweg_o,
+         file.path(path_start, "owen_thalweg_o_D50.gpkg"),
+         delete_dsn = TRUE)
+
+
 
 
 
