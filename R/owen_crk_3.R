@@ -123,6 +123,25 @@ owen_hydro <- owen_w_discharge %>%
     )^(3/10)
   )
 
+hg_fit <- owen_hydro %>%
+  filter(
+    !is.na(ws_cum_up_km2),
+    !is.na(height),
+    ws_cum_up_km2 > 0,
+    height > 0
+  ) %>%
+  lm(log(height) ~ log(ws_cum_up_km2), data = .)
+
+coef_hg <- coef(hg_fit)
+alpha   <- exp(coef_hg[1])   # alpha in h = alpha * A^beta
+beta    <- coef_hg[2]        # beta (dimensionless)
+
+message("Hydraulic geometry: h = ",
+        round(alpha, 3), " * A^", round(beta, 3),
+        "   (A in km2, h in m)")
+
+
+
 write.csv(owen_hydro, "tabular data/owen_crk/owen_crk_hydro_output.csv")
 
 
@@ -139,6 +158,37 @@ watershed_area_pnts <- st_read(
 watershed_area_pnts <- watershed_area_pnts %>%
   filter(as.numeric(FID) %% 2 ==1)
 
+st_write(
+  watershed_area_pnts,
+  "spatial data/owen_crk/watershed_area_pnts_clean.shp"
+)
+
+watershed_area_pnts <- st_read(
+  "spatial data/owen_crk/watershed_area_pnts_clean5.shp", 
+  fid_column_name = "FID"
+)
+
+watershed_AOI <- make_watershed(
+  path_start   = "spatial data/owen_crk/new_workflow",
+  dem_utm_path = "spatial data/owen_crk/dem_utm.tif",
+  dem_utm      = dem_utm,
+  pour_points  = "spatial data/owen_crk/watershed_area_pnts_clean5.shp"
+)
+
+ws_AOI_df <- watershed_AOI %>%
+  st_drop_geometry() %>%
+  dplyr::rename(
+    FID = watersheds,                # adjust if make_watershed uses a different id
+    ws_cum_up_km2 = ws_cum_up_km2    # or whatever column name you chose
+  )
+
+# join drainage area onto your AOI thalweg points
+thalweg_o <- thalweg_o %>%
+  mutate(FID = as.integer(FID)) %>%
+  left_join(ws_AOI_df, by = "FID")
+
+
+
 
 # Make sure thalweg_o is in the same CRS as the DEM
 thalweg_o  <- st_transform(watershed_area_pnts, st_crs(crs(dem_utm)))
@@ -146,9 +196,6 @@ thalweg_o  <- st_zm(thalweg_o, drop = TRUE, what = "ZM")  # ensure 2D points
 
 zvals <- terra::extract(dem_utm, vect(thalweg_o))
 thalweg_o$elev_m <- zvals[, 2]   # 2nd column is the raster value
-
-
-
 
 
 ## ---- 4. Compute local + smoothed slope ----
@@ -175,7 +222,7 @@ tau_c <- 0.045   # critical Shields (try 0.035–0.06 in sensitivity later)
 
 thalweg_o <- thalweg_o %>%
   mutate(
-    h_m    = alpha * (drainage_area_km2^beta),         # bankfull depth from HG
+    h_m    = alpha * (ws_cum_up_km2^beta),         # bankfull depth from HG
     D50_m  = (rho * h_m * S_use) / ((rhos - rho) * tau_c),
     D50_mm = D50_m * 1000,
     spawn_class = case_when(

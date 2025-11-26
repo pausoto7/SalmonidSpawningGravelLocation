@@ -74,7 +74,7 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
     pour_pts   = pp_tmp,
     flow_accum = file.path(path_start, "fac_area.tif"),
     output     = file.path(path_start, "pour_points_snapped_raw.shp"),
-    snap_dist  = 100
+    snap_dist  = 10
   )
   
   pour_snapped <- st_read(file.path(path_start, "pour_points_snapped_raw.shp"),
@@ -104,7 +104,7 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   message("watershed")
   wbt_watershed(
     d8_pntr  = file.path(path_start, "d8_pntr.tif"),
-    pour_pts = file.path(path_start, "pour_points_snapped.shp"),
+    pour_pts = file.path(path_start, "pour_points_snapped_raw.shp"),
     output   = file.path(path_start, "watersheds.tif")
   )
   
@@ -179,3 +179,4 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   # Return SF polygons with both local + upstream area
   return(ws_poly_sf_upstream)
 }
+
