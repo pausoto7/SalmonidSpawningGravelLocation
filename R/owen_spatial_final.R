@@ -161,7 +161,7 @@ b <- coef_QA[2]       # b (dimensionless)
 message("Regional Q–A fit for Owen: Q = ", round(a, 3), " * A^", round(b, 3))
 
 # 4.3 Hydraulic constants for resistance equation
-k_s <- 0.3   # roughness height (m) – assumption, can be tuned
+k_s <- 0.25   # roughness height (m) – assumption, can be tuned
 g   <- 9.81  # gravity (m/s^2)
 
 # 4.4 Use Q–A to estimate Q and unit discharge q at each calibration cross-section
@@ -203,12 +203,41 @@ coef_hg <- coef(hg_fit)
 alpha   <- exp(coef_hg[1])   # alpha in h = alpha * A^beta
 beta    <- coef_hg[2]        # beta (dimensionless)
 
+
+
+owen_hg_data <- owen_hydro %>%
+  filter(
+    !is.na(ws_cum_up_km2),
+    !is.na(height),
+    ws_cum_up_km2 > 0,
+    height > 0
+  )
+
+r2_text <- round(summary(hg_fit)$r.squared, 3)
+
+owen_hg_plot <- ggplot(owen_hg_data,
+                       aes(x = ws_cum_up_km2, y = height)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(
+    x = "Drainage area (km², log scale)",
+    y = "Depth (m, log scale)",
+    title = paste("Hydraulic geometry: h = αA^β (R² =", r2_text, ")")
+  ) + 
+  theme_bw()
+
+print(owen_hg_plot)
+
+
+
 message("Hydraulic geometry: h = ",
         round(alpha, 3), " * A^", round(beta, 3),
         "   (A in km2, h in m)")
 
 # 4.7 Save calibration table for inspection / QC
-write.csv(owen_hydro, "tabular data/owen_crk/owen_crk_hydro_output.csv",
+write.csv(owen_hydro, sprintf("tabular data/owen_crk/owen_crk_hydro_output_%s.csv", gsub("\\.", "", as.character(k_s))),
           row.names = FALSE)
 
 
@@ -361,7 +390,7 @@ thalweg_o <- thalweg_o %>%
   )
 
 # 6.5 Smooth slope and keep magnitude
-k <- 12  # window size; tweak based on point spacing
+k <- 30  # window size; tweak based on point spacing
 thalweg_o_sloped <- thalweg_o %>%
   mutate(
     S_seg_abs = abs(S_seg),
@@ -396,7 +425,7 @@ thalweg_o_final <- thalweg_o_sloped %>%
     spawn_class = case_when(
       is.na(D50_mm)        ~ NA_character_,
       D50_mm < 7           ~ "too fine",
-      D50_mm <= 47         ~ "spawning gravel",
+      D50_mm <= 42         ~ "spawning gravel",
       TRUE                 ~ "too coarse"
     )
   ) %>%
@@ -404,16 +433,57 @@ thalweg_o_final <- thalweg_o_sloped %>%
   rename(FID_ORIG = FID)
 
 thalweg_o_final_df <- thalweg_o_final %>%
-  st_drop_geometry()
+  st_drop_geometry() 
+
+thalweg_o_final_df_count <- thalweg_o_final_df %>%
+  count(spawn_class) %>%
+  mutate(percent = round(100*n/sum(n), 2))
+  
+
+
+
+
+
+summarize_d50(thalweg_o_final_df)
+
+
+owen <- thalweg_o_final %>%
+  filter(!is.na(D50_mm)) %>%
+  arrange(D50_mm) %>%
+  mutate(
+    cumulative = cumsum(rep(1, n())) / n()
+  )
+
+n_owen <- nrow(owen)
+
+# ---- 2. Plot S-curve ----
+ggplot(owen, aes(x = D50_mm, y = cumulative)) +
+  geom_line(color = "#2C7BB6", size = 1.2) +
+  
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_continuous(trans = "log10") +
+  
+  # Gravel thresholds (Mamquam = 7–47 mm)
+  geom_vline(xintercept = 7,  color = "grey40", linetype = "dashed", linewidth = 0.8) +
+  geom_vline(xintercept = 47, color = "firebrick", linetype = "dotted", linewidth = 0.8) +
+  
+  labs(
+    title = "Owen Creek – Cumulative Grain Size Distribution",
+    #subtitle = paste0("n = ", n_mamq, " predicted bed-material samples"),
+    x = "Predicted median grain size D50 (mm, log10 scale)",
+    y = "% finer"
+  ) + theme_bw()
 
 # ------------------------------------------------------------
 # 8. SAVE OUTPUT FOR MAPPING / FURTHER ANALYSIS
 # ------------------------------------------------------------
 
-write.csv(thalweg_o_final_df, "tabular data/owen_crk/owen_properties_output_k03.csv")
+write.csv(thalweg_o_final_df, sprintf("tabular data/owen_crk/owen_properties_output_k%s.csv", gsub("\\.", "", as.character(k_s))))
+write.csv(thalweg_o_final_df_count, sprintf("tabular data/owen_crk/owen_properties_output_proportion_k%s.csv", gsub("\\.", "", as.character(k_s))))
+
 
 st_write(
   thalweg_o_final,
-  file.path(path_start, "owen_thalweg_o_D50_v2.gpkg"),
+  file.path(path_start, sprintf("owen_thalweg_o_D50_%s.gpkg", gsub("\\.", "", as.character(k_s)))),
   delete_dsn = TRUE
 )

@@ -17,11 +17,12 @@ library(mapview)
 #                                       pour_points ="spatial data/owen_crk/pour_points.shp")
 # 
 
-make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
+make_watershed <- function(path_start, 
+                           dem_utm_path,
+                           dem_utm, pour_points, 
+                           poly_name) {
+ # 1. Pre-process DEM: 
   
-  # ---------------------------------------------------------------------------
-  # 1. Pre-process DEM: breach, flow direction, flow accumulation (catchment area)
-  # ---------------------------------------------------------------------------
   message("breach/fill")
   wbt_breach_depressions_least_cost(
     dem    = dem_utm_path,
@@ -169,7 +170,7 @@ make_watershed <- function(path_start, dem_utm_path, dem_utm, pour_points) {
   # Write polygons to GPKG
   st_write(
     ws_poly_sf_upstream,
-    file.path(path_start, "watersheds_polygons_o.gpkg"),
+    file.path(path_start, sprintf("watersheds_polygons_%s.gpkg", poly_name)),
     delete_dsn = TRUE,
     quiet = TRUE
   )
